@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { PAGES } from './document'
-import { ContentPage, FrontCover, RearCover, pageBox } from './Pages'
+import { PAGES, COVER_TEXT, REAR_TEXT, type Page } from './document'
+import { ContentPage, Cover, pageBox } from './Pages'
+import { FRONT_COVER, REAR_COVER } from './template'
+import Editor, { NEW_DOC, type DraftDoc } from './Editor'
 import './styles.css'
 
-const N = PAGES.length
 const FRONT = -1
-const REAR = N
 
 /* Synthetic atmosphere entries (PART 5).
  * These are generated here, in the browser, from a fixed shape list. They are
@@ -20,16 +20,35 @@ const ATMOSPHERE = [
   { ref: '8890', state: 'AWAITING COLLECTION' },
 ]
 
-function titleOf(i: number): string {
-  const b = PAGES[i].blocks.find((x) => x.t === 'h1')
-  return b && b.t === 'h1' ? b.s : PAGES[i].running ?? `Page ${i + 1}`
+type Doc = {
+  name: string
+  pages: Page[]
+  cover: Record<string, string>
+  rear: Record<string, string>
+}
+
+const PROPOSAL: Doc = {
+  name: 'Secure Document Hub & Reader — proposal',
+  pages: PAGES,
+  cover: COVER_TEXT,
+  rear: REAR_TEXT,
+}
+
+function titleOf(pages: Page[], i: number): string {
+  const b = pages[i].blocks?.find((x) => x.t === 'h1')
+  if (b && b.t === 'h1') return b.s
+  if (pages[i].html) {
+    const m = pages[i].html!.match(/<h1[^>]*>(.*?)<\/h1>/i)
+    if (m) return m[1].replace(/<[^>]+>/g, '') || `Page ${i + 1}`
+  }
+  return pages[i].running || `Page ${i + 1}`
 }
 
 /* ------------------------------------------------------------------ */
 /* HUB                                                                  */
 /* ------------------------------------------------------------------ */
 
-function Hub({ onOpen }: { onOpen: () => void }) {
+function Hub({ onOpen, onCreate }: { onOpen: () => void; onCreate: () => void }) {
   return (
     <div className="hub">
       <div className="hub-grain" aria-hidden="true" />
@@ -41,6 +60,9 @@ function Hub({ onOpen }: { onOpen: () => void }) {
           <div className="hub-title">‹ brand ›™ DOCUMENT HUB</div>
           <div className="hub-sub">‹ issuer name — placeholder › — Confidential Document Station</div>
         </div>
+        <button className="admin-link" onClick={onCreate}>
+          DOCUMENT CREATOR →
+        </button>
       </header>
 
       <main className="hub-main">
@@ -57,7 +79,7 @@ function Hub({ onOpen }: { onOpen: () => void }) {
             </div>
             <div>
               <dt>Pages</dt>
-              <dd>{N + 2}</dd>
+              <dd>{PAGES.length + 2}</dd>
             </div>
             <div>
               <dt>Format</dt>
@@ -107,15 +129,16 @@ function Hub({ onOpen }: { onOpen: () => void }) {
 
 type Fit = 'page' | 'width'
 
-function Reader({ onExit }: { onExit: () => void }) {
+function Reader({ doc, onExit, exitLabel }: { doc: Doc; onExit: () => void; exitLabel: string }) {
+  const N = doc.pages.length
+  const REAR = N
   const [i, setI] = useState<number>(FRONT)
   const [contents, setContents] = useState(false)
   const [fit, setFit] = useState<Fit>('page')
-  const stage = useRef<HTMLDivElement>(null)
   const scroller = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(1)
 
-  const size = i >= 0 && i < N ? PAGES[i].size : 'A4'
+  const size = i >= 0 && i < N ? doc.pages[i].size : 'A4'
   const box = pageBox(size)
 
   /* Scale the whole page box. Layout never reflows -- an A4 page is always an
@@ -126,10 +149,8 @@ function Reader({ onExit }: { onExit: () => void }) {
     const measure = () => {
       const padX = window.innerWidth < 700 ? 16 : 48
       const padY = window.innerWidth < 700 ? 16 : 40
-      const availW = el.clientWidth - padX
-      const availH = el.clientHeight - padY
-      const byW = availW / box.width
-      const byH = availH / box.height
+      const byW = (el.clientWidth - padX) / box.width
+      const byH = (el.clientHeight - padY) / box.height
       const s = fit === 'width' ? byW : Math.min(byW, byH)
       setScale(Math.max(0.15, Math.min(s, 1.6)))
     }
@@ -143,11 +164,14 @@ function Reader({ onExit }: { onExit: () => void }) {
     }
   }, [fit, box.width, box.height])
 
-  const go = useCallback((next: number) => {
-    setI(Math.max(FRONT, Math.min(REAR, next)))
-    setContents(false)
-    requestAnimationFrame(() => scroller.current?.scrollTo({ top: 0 }))
-  }, [])
+  const go = useCallback(
+    (next: number) => {
+      setI(Math.max(FRONT, Math.min(REAR, next)))
+      setContents(false)
+      requestAnimationFrame(() => scroller.current?.scrollTo({ top: 0 }))
+    },
+    [REAR],
+  )
 
   /* Keyboard -- a convenience on top of the visible buttons, never the only way */
   useEffect(() => {
@@ -160,7 +184,7 @@ function Reader({ onExit }: { onExit: () => void }) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [i, go])
+  }, [i, go, REAR])
 
   /* Touch swipe -- likewise a convenience */
   const touch = useRef<{ x: number; y: number } | null>(null)
@@ -175,9 +199,7 @@ function Reader({ onExit }: { onExit: () => void }) {
     touch.current = null
   }
 
-  const label =
-    i === FRONT ? 'FRONT COVER' : i === REAR ? 'REAR COVER' : `PAGE ${i + 1} OF ${N}`
-
+  const label = i === FRONT ? 'FRONT COVER' : i === REAR ? 'REAR COVER' : `PAGE ${i + 1} OF ${N}`
   const atEnd = i === REAR
 
   return (
@@ -225,27 +247,20 @@ function Reader({ onExit }: { onExit: () => void }) {
           </button>
           <button className="btn ghost exit" onClick={onExit}>
             <span className="ico">✕</span>
-            <span className="txt">EXIT</span>
+            <span className="txt">{exitLabel}</span>
           </button>
         </div>
       </nav>
 
       <div className="stage" ref={scroller} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
-        <div
-          className="scaler"
-          ref={stage}
-          style={{
-            width: box.width * scale,
-            height: box.height * scale,
-          }}
-        >
+        <div className="scaler" style={{ width: box.width * scale, height: box.height * scale }}>
           <div style={{ transform: `scale(${scale})`, transformOrigin: 'top left' }}>
             {i === FRONT ? (
-              <FrontCover />
+              <Cover tpl={FRONT_COVER} text={doc.cover} which="front" />
             ) : i === REAR ? (
-              <RearCover />
+              <Cover tpl={REAR_COVER} text={doc.rear} which="rear" />
             ) : (
-              <ContentPage page={PAGES[i]} n={i + 1} total={N} />
+              <ContentPage page={doc.pages[i]} n={i + 1} total={N} footer={doc.name} />
             )}
           </div>
         </div>
@@ -281,10 +296,10 @@ function Reader({ onExit }: { onExit: () => void }) {
               <span className="toc-n">—</span>
               <span>Front cover</span>
             </button>
-            {PAGES.map((_, k) => (
+            {doc.pages.map((_, k) => (
               <button key={k} className="toc-item" data-active={i === k} onClick={() => go(k)}>
                 <span className="toc-n">{k + 1}</span>
-                <span>{titleOf(k)}</span>
+                <span>{titleOf(doc.pages, k)}</span>
               </button>
             ))}
             <button className="toc-item" data-active={i === REAR} onClick={() => go(REAR)}>
@@ -300,21 +315,52 @@ function Reader({ onExit }: { onExit: () => void }) {
 
 /* ------------------------------------------------------------------ */
 
+type Mode = 'hub' | 'reader' | 'editor' | 'preview'
+
 export default function App() {
-  const [open, setOpen] = useState(false)
+  const [mode, setMode] = useState<Mode>('hub')
+  const [draft, setDraft] = useState<DraftDoc>(() => NEW_DOC())
+
+  /* Which document the print output should contain. */
+  const printDoc: Doc = mode === 'preview' || mode === 'editor' ? draft : PROPOSAL
+
   return (
     <>
-      <div className="screen">{open ? <Reader onExit={() => setOpen(false)} /> : <Hub onOpen={() => setOpen(true)} />}</div>
+      <div className="screen">
+        {mode === 'hub' && (
+          <Hub onOpen={() => setMode('reader')} onCreate={() => setMode('editor')} />
+        )}
+        {mode === 'reader' && (
+          <Reader doc={PROPOSAL} onExit={() => setMode('hub')} exitLabel="EXIT" />
+        )}
+        {mode === 'preview' && (
+          <Reader doc={draft} onExit={() => setMode('editor')} exitLabel="BACK TO EDITING" />
+        )}
+        {mode === 'editor' && (
+          <Editor
+            doc={draft}
+            setDoc={setDraft}
+            onPreview={() => setMode('preview')}
+            onExit={() => setMode('hub')}
+          />
+        )}
+      </div>
 
-      {/* Print output: the complete document, every page, at true A4.
+      {/* Print output: the complete document, every page, at true A4/A5.
           This is the browser-side equivalent of the server-side pipeline
-          described on page 4 of the document. */}
+          described on page 4 of the proposal. */}
       <div className="print-root" aria-hidden="true">
-        <FrontCover />
-        {PAGES.map((p, k) => (
-          <ContentPage key={p.id} page={p} n={k + 1} total={N} />
+        <Cover tpl={FRONT_COVER} text={printDoc.cover} which="front" />
+        {printDoc.pages.map((p, k) => (
+          <ContentPage
+            key={p.id}
+            page={p}
+            n={k + 1}
+            total={printDoc.pages.length}
+            footer={printDoc.name}
+          />
         ))}
-        <RearCover />
+        <Cover tpl={REAR_COVER} text={printDoc.rear} which="rear" />
       </div>
     </>
   )

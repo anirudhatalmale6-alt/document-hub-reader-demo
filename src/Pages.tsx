@@ -8,10 +8,12 @@ import { FRONT_COVER, REAR_COVER, PAGE_MM, type CoverTemplate, type Region } fro
 export const MM = 96 / 25.4
 export const PT = 96 / 72
 
-export const pageBox = (size: 'A4' | 'A5') => ({
-  width: PAGE_MM[size].w * MM,
-  height: PAGE_MM[size].h * MM,
-})
+export const pageBox = (size: 'A4' | 'A5') => {
+  /* Fall back rather than throw: a malformed page should render wrong, not
+   * take the whole editor down with it. */
+  const mm = PAGE_MM[size] ?? PAGE_MM.A4
+  return { width: mm.w * MM, height: mm.h * MM }
+}
 
 /* ---------------- covers ---------------- */
 
@@ -113,24 +115,43 @@ function BlockView({ b }: { b: Block }) {
   }
 }
 
-export function ContentPage({ page, n, total }: { page: Page; n: number; total: number }) {
+/* A page is rendered from structure (`blocks`, as the proposal document is) or
+ * from the authoring interface's rich text (`html`). Both land in the same
+ * text box, at the same millimetre geometry, so the reader and the PDF do not
+ * care which produced it. */
+export function ContentPage({
+  page,
+  n,
+  total,
+  footer = 'Secure Document Hub & Reader — proposal',
+}: {
+  page: Page
+  n: number
+  total: number
+  footer?: string
+}) {
+  const showFolio = page.folio !== false
   return (
     <div className="page content" style={pageBox(page.size)}>
       <div className="running">
         <span>{page.running}</span>
         <span className="sizetag">{page.size}</span>
       </div>
-      <div className="body">
-        {page.blocks.map((b, i) => (
-          <BlockView key={i} b={b} />
-        ))}
+      <div className={`body sp-${page.spacing ?? 'normal'} ts-${page.textSize ?? 'm'}`}>
+        {page.html !== undefined ? (
+          <div dangerouslySetInnerHTML={{ __html: page.html }} />
+        ) : (
+          page.blocks?.map((b, i) => <BlockView key={i} b={b} />)
+        )}
       </div>
-      <div className="folio">
-        <span>Secure Document Hub &amp; Reader — proposal</span>
-        <span>
-          {n} / {total}
-        </span>
-      </div>
+      {showFolio && (
+        <div className="folio">
+          <span>{footer}</span>
+          <span>
+            {n} / {total}
+          </span>
+        </div>
+      )}
     </div>
   )
 }

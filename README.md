@@ -19,6 +19,25 @@ Live demo: https://anirudhatalmale6-alt.github.io/document-hub-reader-demo/
   millimetres against the true page box. Changing wording never touches artwork.
 - **PDF** — `Print / PDF` prints the complete document at true A4 (210 × 297 mm)
   with live, selectable text.
+- **Document creator** (`DOCUMENT CREATOR` in the Hub header) — add, duplicate,
+  reorder and delete pages; headings, bold/italic/underline, alignment, text
+  size, paragraph spacing, page numbering, A4 or A5 per page; edit the cover's
+  text regions without touching its artwork; save and reopen drafts; preview
+  the result in the reader. It warns when text runs past the bottom of the
+  sheet, which a fixed-page tool has to do.
+
+### Known limits of this demo
+
+- Drafts save to `localStorage`, not a server. In the real system a draft is a
+  row in PostgreSQL.
+- Inline formatting uses `document.execCommand`, which is deprecated. It is the
+  only option without an editor framework; production would use Lexical or
+  ProseMirror so formatting is data rather than HTML. Everything read out of the
+  editable areas is sanitised against an allow-list (`clean()` in
+  `src/Editor.tsx`) — scripts, event handlers and images cannot reach the model.
+- Headless Chromium embeds webfonts as Type 3 subsets. The text is vector and
+  selectable, but that is not the same as TrueType embedding; a production
+  pipeline would fix that before anything goes to a commercial printer.
 
 All artwork and every bracketed string is a deliberate placeholder. Nothing in
 this repository states a fact about any client.

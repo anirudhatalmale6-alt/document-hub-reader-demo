@@ -24,7 +24,13 @@ export type Page = {
   id: string
   size: 'A4' | 'A5'
   running?: string // running head
-  blocks: Block[]
+  /* Structured content -- how the proposal document in this file is written. */
+  blocks?: Block[]
+  /* Rich text produced by the authoring interface. One of the two is set. */
+  html?: string
+  folio?: boolean // page numbering on/off
+  spacing?: 'compact' | 'normal' | 'roomy'
+  textSize?: 's' | 'm' | 'l'
 }
 
 export const COVER_TEXT: Record<string, string> = {
